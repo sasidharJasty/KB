@@ -310,8 +310,7 @@ def build_retriever(KB, k=6):
     return store.as_retriever(search_kwargs={"k": k})
 
 
-def _rag_context(KB, question, k=6):
-    retriever = build_retriever(KB, k=k)
+def _rag_context(KB, question, retriever):
     docs = retriever.invoke(question)
     return "\n".join(f"- {d.page_content}" for d in docs)
 
@@ -419,6 +418,7 @@ class LogicLMPipeline:
         self.KB = KB if KB is not None else build_space_kb()
         self.k = k
         self.use_llm = bool(os.environ.get("API_KEY"))
+        self.retriever = build_retriever(self.KB, k=self.k)
 
         if self.use_llm:
             self.formulator = build_formulator_agent(model_name)
@@ -428,14 +428,14 @@ class LogicLMPipeline:
             self.interpreter = None
 
     def run(self, question):
-        context = _rag_context(self.KB, question, k=self.k)
+        context = _rag_context(self.KB, question, self.retriever)
 
         # ---- Stage 1: Problem Formulator ----
         if self.use_llm:
             res = self.formulator.invoke(
                 {"messages": [{"role": "user", "content": f"Knowledge base context:\n{context}\n\nQuestion: {question}"}]}
             )
-            
+
             # Robust extraction of text from content_blocks
             blocks = res["messages"][-1].content_blocks
             if isinstance(blocks, list) and len(blocks) > 0:
@@ -443,7 +443,7 @@ class LogicLMPipeline:
                 query_str = block.get("text", str(block)) if isinstance(block, dict) else str(block)
             else:
                 query_str = str(blocks)
-            
+
             query_str = query_str.strip()
         else:
             query_str = _fallback_formulate(self.KB, question, context)
@@ -462,7 +462,7 @@ class LogicLMPipeline:
                     {"role": "user", "content": f"Query: {str(goal)}\nVerdict: {verdict}\nProof trace:\n{trace_text}"}
                 ]
             })
-            
+
             blocks = res["messages"][-1].content_blocks
             if isinstance(blocks, list) and len(blocks) > 0:
                 block = blocks[0]
