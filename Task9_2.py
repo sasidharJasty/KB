@@ -1,37 +1,4 @@
-"""
-Logic-LM reasoning system, rebuilt as a plain LangGraph pipeline.
 
-Design change from the tool-calling version:
-------------------------------------------------
-Previously, `search_knowledge_base`, `identify_goal`, `logic_reasoner`, and
-`find_entities` were all exposed to Gemini as @tool-decorated functions, and
-Gemini had to decide (via tool-calling) which ones to invoke, in what order,
-with what arguments. That's slow (multiple round trips) and gives the LLM
-more room to go off-script (inventing predicates, calling logic_reasoner
-with a variable, etc.).
-
-None of those four operations actually need an LLM to *decide* to run them —
-retrieval always runs first, and the only branch point is "is this a
-yes/no question about one entity, or an enumeration question". So:
-
-  - search_knowledge_base -> plain node, always runs first (no LLM decision)
-  - logic_reasoner        -> plain node, deterministic backward chaining
-  - find_entities         -> plain node, deterministic KB scan
-  - identify_goal         -> folded into the one LLM call below
-
-Gemini is now called at most twice per question:
-  1. `formulate` node: given the question + retrieved context, output a
-     structured {query_type, predicate} object. This is the ONLY place an
-     LLM decides anything.
-  2. `explain` node (optional): given the proof/enumeration result, produce
-     a short natural-language explanation. Skippable via
-     `want_explanation=False` in the input state.
-
-Graph shape:
-
-    START -> retrieve -> formulate --(yes_no)--> reason -----> [explain?] -> END
-                                    \--(enumerate)--> enumerate --/
-"""
 
 import math
 import os
